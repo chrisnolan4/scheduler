@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nolan Scheduler Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fc; /* Nolan-inspired soft background */
+        }
+        .container {
+            max-width: 95%;
+            margin: 0 auto;
+        }
+        .card {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .tab-button.active {
+            color: #10B981; /* Green-500 */
+            border-bottom: 3px solid #10B981;
+        }
+        .loading-ring {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4CAF50; /* A nice green color */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="container">
+        <div class="card p-6 rounded-xl space-y-6">
+            <h1 class="text-3xl font-bold text-gray-800 text-center">Nolan Scheduler Assistant</h1>
+            <p class="text-center text-gray-600">Quickly find and book estimate slots based on availability and territory.</p>
+
+            <div class="flex border-b border-gray-200 mb-4">
+                <button id="territoryTab" class="tab-button active" data-mode="territory">
+                    Territory Search (ZIP Code)
+                </button>
+                <button id="filterTab" class="tab-button" data-mode="filter">
+                    Manual Filter Search
+                </button>
+            </div>
+
+            <div class="w-full mb-4">
+                <label for="duration" class="block text-sm font-medium text-gray-700 mb-1">Estimate Duration (Minutes)</label>
+                <select id="duration" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500">
+                    <option value="60">60 minutes</option>
+                    <option value="90" selected>90 minutes (1.5 hours)</option>
+                    <option value="120">120 minutes (2 hours)</option>
+                </select>
+            </div>
+            
+            <div id="territorySearchContainer">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="zipCode" class="block text-sm font-medium text-gray-700 mb-1">Lead ZIP Code</label>
+                        <input type="text" id="zipCode" placeholder="E.g., 19003" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" maxlength="5" value="19341">
+                        <p id="territoryMessage" class="mt-1 text-sm font-medium"></p>
+                    </div>
+                    <div class="flex items-end">
+                        <button id="checkAvailabilityButtonTerritory" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex justify-center items-center transition duration-150">
+                            <div id="loadingIndicatorTerritory" class="loading-ring mr-2"></div>
+                            <span>Check Availability</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="filterSearchContainer" class="hidden">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div class="sm:col-span-1">
+                        <label for="filterEstimator" class="block text-sm font-medium text-gray-700 mb-1">Select Estimator</label>
+                        <select id="filterEstimator" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500">
+                            </select>
+                    </div>
+                    <div class="sm:col-span-1">
+                        <label for="startDate" class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                        <input type="date" id="startDate" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div class="sm:col-span-1">
+                        <label for="endDate" class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                        <input type="date" id="endDate" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500">
+                    </div>
+                    <div class="sm:col-span-1 flex items-end">
+                        <button id="checkAvailabilityButtonFilter" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex justify-center items-center transition duration-150">
+                            <div id="loadingIndicatorFilter" class="loading-ring mr-2"></div>
+                            <span>Filter Search</span>
+                        </button>
+                    </div>
+                </div>
+                <p id="filterError" class="mt-2 text-red-500 font-semibold hidden"></p>
+            </div>
+
+            <div id="resultsContainer" class="space-y-4 pt-4 border-t mt-4">
+                <h2 class="text-xl font-semibold text-gray-800 hidden" id="resultsTitle">Available Slots:</h2>
+                <div id="availabilityList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    </div>
+                <p id="errorFeedback" class="text-red-500 font-semibold hidden"></p>
+            </div>
+
+            <div id="bookingModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
+                <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-lg space-y-4">
+                    <h3 class="text-2xl font-bold text-gray-800">Confirm Estimate Booking</h3>
+                    <p id="selectedTimeInfo" class="text-lg text-gray-700 font-semibold"></p>
+                    <p id="selectedEstimatorInfo" class="text-md text-gray-600"></p>
+
+                    <h4 class="text-lg font-semibold mt-4 border-t pt-4">Client Contact & Project Details</h4>
+                    <input type="text" id="clientName" placeholder="Client Full Name (Required)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <input type="email" id="clientEmail" placeholder="Client Email (Required for Confirmation Text)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <input type="text" id="clientPhone" placeholder="Client Phone (Optional)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="text" id="jobType" placeholder="Job Type (e.g., Interior, Exterior, Cabinets)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <input type="text" id="deadline" placeholder="Deadline (e.g., End of Fall, Flexible)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <input type="text" id="source" placeholder="Source (How lead found us)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <input type="text" id="yearBuilt" placeholder="Year Built (e.g., 1985)" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+
+                    <textarea id="bookingNotes" placeholder="Additional Notes (from Receptionist)" rows="3" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"></textarea>
+
+                    <div class="flex justify-between space-x-2 pt-2">
+                        <button id="cancelButton" class="w-1/2 bg-gray-200 text-gray-800 font-semibold py-2 rounded-lg hover:bg-gray-300 transition duration-150">Cancel</button>
+                        <button id="bookAppointmentButton" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition duration-150 flex justify-center items-center">
+                            <div id="bookingLoading" class="loading-ring mr-2"></div>
+                            <span>Book Appointment</span>
+                        </button>
+                    </div>
+                    <p id="bookingStatus" class="mt-2 text-center font-semibold text-sm"></p>
+                </div>
+            </div>
+            
+            <div id="confirmationContainer" class="hidden card p-6 rounded-xl space-y-4 mt-6 border-blue-400 border-2">
+                <h2 class="text-xl font-bold text-blue-700">Confirmation Text to Send to Customer:</h2>
+                <textarea id="confirmationTextOutput" rows="10" readonly class="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 font-mono text-sm"></textarea>
+                <button id="copyConfirmationButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition duration-150">Copy Text</button>
+                <p class="text-sm text-gray-600 text-center">**Paste this text into your PipelineDeals email template or contact record.**</p>
+            </div>
+
+            <div id="messageBox" class="fixed top-4 right-4 p-4 rounded-lg shadow-xl text-white transition-opacity duration-300 opacity-0 hidden" style="min-width: 250px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // 🚨 IMPORTANT: The functions below now use a remote Apps Script Web App URL.
+        // This is the URL you provided, which now connects your frontend to your Google Calendar API.
+        const APPS_SCRIPT_BASE_URL = 'https://script.google.com/macros/s/AKfycbxYwPoj_OLX_UUHprks-pztyLmMSvZC-Q5Byq4gLq9W9Ye6s2cPjUzF4gkzoLyzrPHHXQ/exec'; 
+
+        // --- REAL API FUNCTIONS (Frontend fetch implementation) ---
+
+        /**
+         * Sends a request to the Apps Script backend to perform a Google Calendar Free/Busy search.
+         */
+        async function search(calendarIds, timeMin, timeMax) {
+            console.log(`API Search: Calendars: ${calendarIds.join(', ')} from ${timeMin} to ${timeMax}`);
+
+            // Note: We use the '?path=availability' parameter to direct the script's doPost function.
+            const url = `${APPS_SCRIPT_BASE_URL}?path=availability`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    calendarIds: calendarIds,
+                    timeMin: timeMin,
+                    timeMax: timeMax,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("Backend Error Response:", errorText);
+                throw new Error(`Server search failed: ${response.status} ${response.statusText}`);
+            }
+
+            // The backend returns a JSON object with a 'calendars' key
+            return await response.json(); 
+        }
+
+        /**
+         * Sends a request to the Apps Script backend to create a new calendar event.
+         */
+        async function create(eventDetails) {
+            console.log("API Create Event:", eventDetails.summary, "on", eventDetails.calendarId);
+
+            // Note: We use the '?path=book' parameter to direct the script's doPost function.
+            const url = `${APPS_SCRIPT_BASE_URL}?path=book`;
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(eventDetails),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("Backend Error Response:", errorText);
+                throw new Error(`Server booking failed: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return { status: 200, summary: data.summary || eventDetails.summary }; 
+        }
+
+        // --- GLOBAL VARIABLES & CONFIGURATION ---
+        let selectedEstimatorKey = null;
+        let selectedStartTime = null;
+        let selectedEndTime = null;
+        let searchMode = 'territory'; 
+
+        const ESTIMATORS = {
+            "chris_nolan": { name: "Chris Nolan (Delaware/Montco)", calendarId: "chris.nolan@nolanpainting.com" },
+            "kevin_dobson": { name: "Kevin Dobson (Chester County)", calendarId: "kevin.dobson@nolanpainting.com" },
+            "todd_carlin": { name: "Todd Carlin (Chester County)", calendarId: "todd.carlin@nolanpainting.com" },
+            "todd_hewish": { name: "Todd Hewish (Bucks County)", calendarId: "todd.hewish@nolanpainting.com" },
+            "zach_motley": { name: "Zach Motley (Bucks County)", calendarId: "zach.motley@nolanpainting.com" },
+            "alex_bell": { name: "Alex Bell (Philly/Delaware)", calendarId: "alex.bell@nolanpainting.com" },
+            "conal_mulraenny": { name: "Conal Mulraenny (Delaware/Montco)", calendarId: "conal.mulraenny@nolanpainting.com" },
+            "jim_falk": { name: "Jim Falk (VP of Sales)", calendarId: "jim.falk@nolanpainting.com" } 
+        };
+
+        const TERRITORY_MAP = {
+            // CHESTER COUNTY (CHEST): Kevin D. & Todd C. (Use a live ZIP to test real calendar access)
+            "19341": ["kevin_dobson", "todd_carlin"],
+            "19380": ["kevin_dobson", "todd_carlin"],
+            "19333": ["kevin_dobson", "todd_carlin"],
+            "19425": ["kevin_dobson", "todd_carlin"],
+            
+            // BUCKS COUNTY (BUCKS): Todd H. & Zach M.
+            "18901": ["todd_hewish", "zach_motley"],
+            "18940": ["todd_hewish", "zach_motley"],
+            "19007": ["todd_hewish", "zach_motley"],
+            "18966": ["todd_hewish", "zach_motley"],
+
+            // DELAWARE COUNTY (DELCO): Chris N., Alex B., & Conal M. 
+            "19083": ["chris_nolan", "alex_bell", "conal_mulraenny"],
+            "19010": ["chris_nolan", "alex_bell", "conal_mulraenny"],
+            "19023": ["chris_nolan", "alex_bell", "conal_mulraenny"],
+            
+            // MONTGOMERY COUNTY (MONTCO): Chris N. & Conal M.
+            "19406": ["chris_nolan", "conal_mulraenny"],
+            "19462": ["chris_nolan", "conal_mulraenny"],
+            "19002": ["chris_nolan", "conal_mulraenny"],
+            
+            // PHILADELPHIA COUNTY (PHILLY): Alex B. (Sole Coverage)
+            "19107": ["alex_bell"],
+            "19146": ["alex_bell"],
+            "19134": ["alex_bell"]
+        };
+
+        // --- CORE FUNCTIONS ---
+
+        function getEstimatorKeys(zipCode) {
+            return TERRITORY_MAP[zipCode] || null;
+        }
+
+        function toggleLoading(isLoading, mode) {
+            const currentMode = mode || searchMode; 
+            let buttonId, loaderId, buttonText;
+
+            if (currentMode === 'booking') {
+                buttonId = 'bookAppointmentButton';
+                loaderId = 'bookingLoading';
+                buttonText = 'Book Appointment';
+            } else {
+                buttonId = currentMode === 'territory' ? 'checkAvailabilityButtonTerritory' : 'checkAvailabilityButtonFilter';
+                loaderId = currentMode === 'territory' ? 'loadingIndicatorTerritory' : 'loadingIndicatorFilter';
+                buttonText = currentMode === 'territory' ? 'Check Availability' : 'Filter Search';
+            }
+            
+            const button = document.getElementById(buttonId);
+            const loader = document.getElementById(loaderId);
+            const buttonSpan = button ? button.querySelector('span') : null;
+            
+            if (!button || !loader) return; 
+
+            button.disabled = isLoading;
+            loader.style.display = isLoading ? 'inline-block' : 'none';
+            if (buttonSpan) {
+                buttonSpan.textContent = isLoading ? (currentMode === 'territory' ? 'Checking...' : (currentMode === 'filter' ? 'Filtering...' : 'Processing...')) : buttonText;
+            }
+        }
+        
+        function populateEstimatorDropdown() {
+            const dropdown = document.getElementById('filterEstimator');
+            dropdown.innerHTML = '<option value="">-- Select Estimator --</option>';
+            for (const key in ESTIMATORS) {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = ESTIMATORS[key].name;
+                dropdown.appendChild(option);
+            }
+        }
+
+        function showMessage(message, type = 'success') {
+            const box = document.getElementById('messageBox');
+            box.textContent = message;
+            box.className = `fixed top-4 right-4 p-4 rounded-lg shadow-xl text-white transition-opacity duration-300 opacity-100 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+            box.style.display = 'block';
+            setTimeout(() => {
+                box.style.opacity = '0';
+                setTimeout(() => { box.style.display = 'none'; }, 300);
+            }, 5000);
+        }
+        
+        function copyConfirmationText() {
+            const textarea = document.getElementById('confirmationTextOutput');
+            textarea.select();
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(textarea.value).then(() => {
+                    showMessage("Confirmation text copied to clipboard!", 'success');
+                }).catch(err => {
+                    document.execCommand('copy');
+                    showMessage("Confirmation text copied to clipboard! (Fallback)", 'success');
+                });
+            } else {
+                document.execCommand('copy');
+                showMessage("Confirmation text copied to clipboard! (Fallback)", 'success');
+            }
+        }
+
+        function setSearchMode(mode, element) {
+            searchMode = mode;
+            document.getElementById('territorySearchContainer').classList.toggle('hidden', mode !== 'territory');
+            document.getElementById('filterSearchContainer').classList.toggle('hidden', mode !== 'filter');
+            
+            document.getElementById('territoryMessage').textContent = "";
+            document.getElementById('filterError').classList.add('hidden');
+            document.getElementById('availabilityList').innerHTML = '';
+            document.getElementById('resultsTitle').classList.add('hidden');
+            document.getElementById('errorFeedback').classList.add('hidden');
+            document.getElementById('confirmationContainer').classList.add('hidden');
+            
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+        }
+        
+        function openBookingModal(start, end, estimator) {
+            selectedStartTime = start.toISOString();
+            selectedEndTime = end.toISOString();
+            
+            const estimatorKey = Object.keys(ESTIMATORS).find(key => ESTIMATORS[key].calendarId === estimator.calendarId);
+            selectedEstimatorKey = estimatorKey;
+
+            const startStr = start.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const endStr = end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+            document.getElementById('selectedTimeInfo').textContent = `${startStr} to ${endStr}`;
+            document.getElementById('selectedEstimatorInfo').textContent = `With: ${estimator.name}`;
+            document.getElementById('bookingStatus').textContent = "";
+            
+            // Clear previous inputs
+            document.getElementById('clientName').value = '';
+            document.getElementById('clientEmail').value = '';
+            document.getElementById('clientPhone').value = '';
+            document.getElementById('jobType').value = '';
+            document.getElementById('deadline').value = '';
+            document.getElementById('source').value = '';
+            document.getElementById('yearBuilt').value = '';
+            document.getElementById('bookingNotes').value = '';
+
+            document.getElementById('bookingModal').classList.remove('hidden');
+            document.getElementById('confirmationContainer').classList.add('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('bookingModal').classList.add('hidden');
+        }
+
+        async function bookAppointment() {
+            const clientName = document.getElementById('clientName').value.trim();
+            const clientEmail = document.getElementById('clientEmail').value.trim();
+            const clientPhone = document.getElementById('clientPhone').value.trim();
+            const bookingNotes = document.getElementById('bookingNotes').value.trim();
+            
+            const jobType = document.getElementById('jobType').value.trim();
+            const deadline = document.getElementById('deadline').value.trim();
+            const source = document.getElementById('source').value.trim();
+            const yearBuilt = document.getElementById('yearBuilt').value.trim();
+            
+            const bookingStatus = document.getElementById('bookingStatus');
+            const estimator = ESTIMATORS[selectedEstimatorKey];
+
+            if (!clientName || !clientEmail || !jobType || !deadline || !source || !yearBuilt) {
+                bookingStatus.textContent = "Client Name, Email, Job Type, Deadline, Source, and Year Built are required!";
+                bookingStatus.classList.add('text-red-500');
+                return;
+            }
+            
+            toggleLoading(true, 'booking'); 
+            bookingStatus.classList.remove('text-red-500', 'text-green-500');
+            bookingStatus.textContent = "Booking...";
+            
+            const zipCode = document.getElementById('zipCode').value;
+            
+            const startTimeDisplay = new Date(selectedStartTime).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+
+            const customerConfirmationText = `
+Subject: Nolan Painting Appointment Confirmation for ${clientName}
+
+Dear ${clientName},
+
+Thank a for booking an estimate with Nolan Painting! 
+This email is to confirm your appointment for a ${jobType} estimate at ${startTimeDisplay} with Estimator ${estimator.name}.
+
+The estimate duration is approximately ${document.getElementById('duration').value} minutes.
+
+We look forward to seeing you soon!
+The Nolan Painting Team
+`;
+            
+            const eventDetails = {
+                summary: `Estimate: ${clientName} (${jobType})`,
+                description: `
+--- APPOINTMENT DETAILS ---
+Client Name: ${clientName}
+Client Email: ${clientEmail}
+Client Phone: ${clientPhone || 'N/A'}
+ZIP Code: ${zipCode || 'Filter Search'}
+
+--- JOB SPECIFICS ---
+Job Type: ${jobType}
+Deadline: ${deadline}
+Source: ${source}
+Year Built: ${yearBuilt}
+
+--- RECEPTIONIST NOTES ---
+${bookingNotes}
+`,
+                start: { dateTime: selectedStartTime },
+                end: { dateTime: selectedEndTime },
+                
+                attendees: [], 
+                sendNotifications: false, 
+                
+                calendarId: estimator.calendarId
+            };
+
+            try {
+                await create(eventDetails);
+
+                bookingStatus.textContent = `Success! Calendar updated silently.`;
+                bookingStatus.classList.add('text-green-500');
+                
+                document.getElementById('confirmationTextOutput').value = customerConfirmationText.trim();
+                document.getElementById('confirmationContainer').classList.remove('hidden');
+
+                showMessage(`Booking successful! Copy the confirmation text below and send it to the customer.`, 'success');
+                
+                setTimeout(() => {
+                    closeModal();
+                    document.getElementById('availabilityList').innerHTML = '';
+                    document.getElementById('resultsTitle').classList.add('hidden');
+                }, 1000);
+
+            } catch (error) {
+                console.error("Booking Error:", error);
+                bookingStatus.textContent = `Booking failed! (API Error) Check console for details: ${error.message}`;
+                bookingStatus.classList.add('text-red-500');
+            } finally {
+                toggleLoading(false, 'booking');
+            }
+        }
+
+        async function findAvailability() {
+            const durationMinutes = parseInt(document.getElementById('duration').value);
+            const availabilityList = document.getElementById('availabilityList');
+            const resultsTitle = document.getElementById('resultsTitle');
+            const errorFeedback = document.getElementById('errorFeedback');
+            
+            availabilityList.innerHTML = '';
+            errorFeedback.classList.add('hidden');
+            resultsTitle.classList.add('hidden');
+            document.getElementById('confirmationContainer').classList.add('hidden');
+
+            let calendarIds = [];
+            let startSearch, endSearch;
+            let currentEstimators = [];
+            let allFreeSlots = [];
+
+            if (searchMode === 'territory') {
+                const zipCode = document.getElementById('zipCode').value.trim();
+                const territoryMessage = document.getElementById('territoryMessage');
+                territoryMessage.textContent = "";
+
+                if (!zipCode || zipCode.length !== 5) {
+                    territoryMessage.textContent = "Please enter a valid 5-digit ZIP code.";
+                    territoryMessage.classList.add('text-red-500');
+                    return;
+                }
+                
+                const estimatorKeys = getEstimatorKeys(zipCode); 
+                
+                if (!estimatorKeys || estimatorKeys.length === 0) {
+                    territoryMessage.textContent = "ZIP Code not in a defined territory. Please use Filter Search or contact a manager.";
+                    territoryMessage.classList.add('text-red-500');
+                    return;
+                }
+                
+                currentEstimators = estimatorKeys.map(key => ESTIMATORS[key]);
+                calendarIds = currentEstimators.map(e => e.calendarId);
+
+                const estimatorNames = currentEstimators.map(e => e.name).join(' and ');
+                territoryMessage.textContent = `Territory: ${zipCode} is covered by ${estimatorNames}.`;
+                territoryMessage.classList.remove('text-red-500');
+                territoryMessage.classList.add('text-green-500');
+                
+                const now = new Date();
+                startSearch = new Date(now);
+                // Search starts one hour from the next half-hour mark
+                startSearch.setMinutes(Math.ceil(now.getMinutes() / 30) * 30, 0, 0); 
+                startSearch.setHours(startSearch.getHours() + 1);
+
+                endSearch = new Date(startSearch);
+                endSearch.setDate(startSearch.getDate() + 7);
+
+            } else { 
+                const filterEstimatorKey = document.getElementById('filterEstimator').value;
+                const startDateStr = document.getElementById('startDate').value;
+                const endDateStr = document.getElementById('endDate').value;
+                const filterError = document.getElementById('filterError');
+                filterError.classList.add('hidden');
+
+                if (!filterEstimatorKey || !startDateStr || !endDateStr) {
+                    filterError.textContent = "Please select an Estimator, a Start Date, and an End Date.";
+                    filterError.classList.remove('hidden');
+                    return;
+                }
+                
+                currentEstimators = [ESTIMATORS[filterEstimatorKey]];
+                calendarIds = [currentEstimators[0].calendarId];
+                
+                startSearch = new Date(startDateStr);
+                const today = new Date();
+                if (startSearch.toDateString() === today.toDateString()) {
+                     startSearch.setHours(today.getHours() + 1, 0, 0, 0);
+                } else {
+                    startSearch.setHours(8, 0, 0, 0); // Start search at 8 AM on selected day
+                }
+
+                endSearch = new Date(endDateStr);
+                endSearch.setHours(23, 59, 59, 999); 
+            }
+            
+            toggleLoading(true);
+            
+            try {
+                const response = await search(calendarIds, startSearch.toISOString(), endSearch.toISOString());
+
+                toggleLoading(false);
+                
+                const isWeekend = (date) => date.getDay() === 0 || date.getDay() === 6;
+
+                for (const calendarId in response.calendars) {
+                    const estimator = currentEstimators.find(e => e.calendarId === calendarId);
+                    if (!estimator) continue;
+
+                    const freeBusyData = response.calendars[calendarId].busy;
+                    
+                    const allBlocks = [
+                        { end: startSearch.toISOString() }, 
+                        ...freeBusyData.map(b => ({
+                            start: new Date(b.start).toISOString(), 
+                            end: new Date(b.end).toISOString() 
+                        })), 
+                        { start: endSearch.toISOString() }
+                    ];
+
+                    allBlocks.sort((a, b) => new Date(a.start || a.end).getTime() - new Date(b.start || b.end).getTime());
+
+                    for (let i = 0; i < allBlocks.length - 1; i++) {
+                        const blockEnd = new Date(allBlocks[i].end || allBlocks[i].start);
+                        const blockStart = new Date(allBlocks[i+1].start || allBlocks[i+1].end);
+                        
+                        let currentSlotStart = new Date(blockEnd);
+                        currentSlotStart.setMinutes(Math.ceil(currentSlotStart.getMinutes() / 30) * 30, 0, 0);
+                        
+                        while (currentSlotStart.getTime() + durationMinutes * 60000 <= blockStart.getTime()) {
+                            let currentSlotEnd = new Date(currentSlotStart.getTime() + durationMinutes * 60000);
+                            
+                            if (!isWeekend(currentSlotStart)) {
+                                const slotKey = `${currentSlotStart.toISOString()}-${currentSlotEnd.toISOString()}-${estimator.calendarId}`;
+                                if (!allFreeSlots.some(s => s.key === slotKey)) {
+                                    allFreeSlots.push({ 
+                                        start: new Date(currentSlotStart), 
+                                        end: currentSlotEnd, 
+                                        estimator: estimator,
+                                        key: slotKey
+                                    });
+                                }
+                            }
+                            
+                            currentSlotStart.setMinutes(currentSlotStart.getMinutes() + 30);
+                        }
+                    }
+                }
+                
+                allFreeSlots.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+                if (allFreeSlots.length > 0) {
+                    resultsTitle.classList.remove('hidden');
+                    allFreeSlots.slice(0, 15).forEach(slot => {
+                        const startStr = slot.start.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        const endStr = slot.end.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        
+                        const button = document.createElement('button');
+                        button.className = 'w-full p-4 bg-white border-2 border-green-300 text-gray-800 font-semibold rounded-xl hover:bg-green-50 transition duration-150 text-left';
+                        button.innerHTML = `
+                            <span class="block text-sm text-green-700">${slot.estimator.name} Available</span>
+                            <span class="block text-lg">${startStr} - ${endStr}</span>
+                        `;
+                        button.addEventListener('click', () => openBookingModal(slot.start, slot.end, slot.estimator)); 
+                        availabilityList.appendChild(button);
+                    });
+                } else {
+                    errorFeedback.textContent = `No available slots found in the selected range for the covering estimator(s).`;
+                    errorFeedback.classList.remove('hidden');
+                }
+
+            } catch (error) {
+                toggleLoading(false);
+                console.error("Calendar Search Error:", error);
+                errorFeedback.textContent = `Error checking calendar availability. (API Error) Check console for details: ${error.message}`;
+                errorFeedback.classList.remove('hidden');
+            }
+        }
+
+
+        // --- INITIALIZATION & EVENT LISTENERS ---
+        document.addEventListener('DOMContentLoaded', () => {
+            populateEstimatorDropdown();
+            
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('startDate').setAttribute('min', today);
+            document.getElementById('endDate').setAttribute('min', today);
+
+            document.getElementById('territoryTab').addEventListener('click', (e) => {
+                setSearchMode('territory', e.currentTarget);
+            });
+            document.getElementById('filterTab').addEventListener('click', (e) => {
+                setSearchMode('filter', e.currentTarget);
+            });
+
+            document.getElementById('checkAvailabilityButtonTerritory').addEventListener('click', findAvailability);
+            document.getElementById('checkAvailabilityButtonFilter').addEventListener('click', findAvailability);
+
+            document.getElementById('bookAppointmentButton').addEventListener('click', bookAppointment);
+            document.getElementById('cancelButton').addEventListener('click', closeModal);
+            document.getElementById('copyConfirmationButton').addEventListener('click', copyConfirmationText);
+
+        });
+
+    </script>
+</body>
+</html>
